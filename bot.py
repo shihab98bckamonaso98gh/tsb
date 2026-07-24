@@ -1,49 +1,17 @@
 #!/usr/bin/env python3
 """
-Termux Automation Bot - Auto virtual environment setup
+Termux Automation Bot - Works inside proot Ubuntu
+Instagram | Facebook | New FB | Reset FB
 """
 
 import os
 import sys
-import subprocess
-
-def setup_virtual_env():
-    """Create and activate virtual environment if needed."""
-    venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv")
-    
-    # Check if we're already in a virtual environment
-    if sys.prefix != sys.base_prefix:
-        return  # Already in venv
-    
-    # Check if venv exists
-    if not os.path.exists(venv_path):
-        print("🔧 Creating virtual environment...")
-        subprocess.run([sys.executable, "-m", "venv", "venv"], check=True)
-        
-        # Install playwright in the new venv
-        pip_path = os.path.join(venv_path, "bin", "pip")
-        subprocess.run([pip_path, "install", "--upgrade", "pip"], check=True)
-        subprocess.run([pip_path, "install", "playwright"], check=True)
-        
-        playwright_path = os.path.join(venv_path, "bin", "playwright")
-        subprocess.run([playwright_path, "install", "chromium"], check=True)
-        subprocess.run([playwright_path, "install-deps", "chromium"], check=True)
-        
-        print("✅ Virtual environment ready!")
-    
-    # Restart script using venv's Python
-    python_path = os.path.join(venv_path, "bin", "python")
-    os.execv(python_path, [python_path] + sys.argv)
-
-# Setup before any imports
-setup_virtual_env()
-
-# Now safe to import (we're in the venv)
 import time
 import random
 import threading
 from queue import Queue, Empty
 from datetime import datetime
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 # ---------- Fixed Mobile User Agents ----------
 USER_AGENTS = [
@@ -52,11 +20,15 @@ USER_AGENTS = [
     "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
     "Mozilla/5.0 (Linux; Android 15; SM-S931B Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/127.0.6533.103 Mobile Safari/537.36",
     "Mozilla/5.0 (Linux; Android 15; SM-S931U Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/132.0.6834.163 Mobile Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 14; SM-S928B/DS) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36",
+    "Mozila/5.0 (Linux; Android 14; SM-S928B/DS) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36",
+    "Mozila/5.0 (Linux; Android 14; SM-S928W) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A5370a Safari/604.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/69.0.3497.105 Mobile/15E148 Safari/605.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1",
     "Mozilla/5.0 (Windows Phone 10.0; Android 6.0.1; Microsoft; RM-1152) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Mobile Safari/537.36 Edge/15.15254",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 9 Pro Build/AD1A.240418.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.54 Mobile Safari/537.36"
+    "Mozilla/5.0 (Linux; Android 14; Pixel 9 Pro Build/AD1A.240418.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.54 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 14; Pixel 9 Build/AD1A.240411.003.A5; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.54 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 14; moto g power 5G - 2024 Build/U1UD34.16-62; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/123.0.6312.99 Mobile Safari/537.36"
 ]
 
 def parse_proxy(proxy_str):
@@ -85,7 +57,6 @@ class InstagramAutomation:
         self.resend_count = 0
 
     def run(self):
-        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -118,11 +89,10 @@ class InstagramAutomation:
 
             for _ in range(self.resend_attempts):
                 try:
-                    didnt_get_code = page.locator('div[role="button"][aria-label="I didn’t get the code"]')
+                    didnt_get_code = page.locator('div[role="button"][aria-label="I didn\'t get the code"]')
                     if didnt_get_code.count() == 0: break
                     didnt_get_code.click()
                     time.sleep(1)
-                    page.wait_for_load_state("networkidle", timeout=5000)
                     resend_btn = page.locator('div[role="button"][aria-label="Resend confirmation code"]')
                     resend_btn.wait_for(state="visible", timeout=5000)
                     resend_btn.click()
@@ -138,6 +108,7 @@ class InstagramAutomation:
             if playwright: playwright.stop()
         return self.success
 
+
 class FacebookAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, viewport=None):
         self.phone = phone
@@ -148,7 +119,6 @@ class FacebookAutomation:
         self.success = False
 
     def run(self):
-        from playwright.sync_api import sync_playwright
         playwright = None
         browser = None
         try:
@@ -168,11 +138,13 @@ class FacebookAutomation:
             continue_btn.wait_for(state="visible", timeout=10000)
             continue_btn.click()
             time.sleep(3)
-            page.wait_for_load_state("networkidle", timeout=20000)
 
-            if self._handle_account_not_found(page): return False
-            self._navigate_to_sms_option(page)
-            self.success = self._is_code_entry_page(page)
+            if page.locator('div[role="radio"][aria-label*="sms" i]').count() > 0:
+                page.locator('div[role="radio"][aria-label*="sms" i]').first.click()
+                time.sleep(0.5)
+                page.locator('div[role="button"][aria-label="Continue"]').last.click()
+
+            self.success = True
         except:
             self.success = False
         finally:
@@ -180,37 +152,6 @@ class FacebookAutomation:
             if playwright: playwright.stop()
         return self.success
 
-    def _handle_account_not_found(self, page):
-        try:
-            dialog = page.locator('div[role="dialog"]')
-            if dialog.count() > 0 and "couldn't find your account" in dialog.inner_text().lower():
-                try_again_btn = dialog.locator('div[role="button"]:has-text("Try again")')
-                if try_again_btn.count() > 0: try_again_btn.click(); time.sleep(1)
-                return True
-        except: pass
-        return False
-
-    def _navigate_to_sms_option(self, page):
-        for _ in range(6):
-            page.wait_for_load_state("networkidle", timeout=10000)
-            time.sleep(1)
-            if page.locator('div[role="radio"][aria-label*="sms" i]').count() > 0:
-                page.locator('div[role="radio"][aria-label*="sms" i]').first.click()
-                time.sleep(0.5)
-                continue_btns = page.locator('div[role="button"][aria-label="Continue"]')
-                if continue_btns.count() > 0: continue_btns.last.click()
-                break
-            try_another = page.locator('div[role="button"][aria-label="Try another way"]')
-            if try_another.count() > 0: try_another.click(); time.sleep(2)
-        if not self._is_code_entry_page(page):
-            try:
-                page.locator('text="Get code via SMS"').first.click()
-                time.sleep(1)
-                page.locator('div[role="button"][aria-label="Continue"]').last.click()
-            except: pass
-
-    def _is_code_entry_page(self, page):
-        return page.locator('input[aria-label="Enter code"]').count() > 0
 
 class NewFacebookAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
@@ -224,7 +165,6 @@ class NewFacebookAutomation:
         self.resend_count = 0
 
     def run(self):
-        from playwright.sync_api import sync_playwright
         playwright = None
         browser = None
         try:
@@ -235,54 +175,40 @@ class NewFacebookAutomation:
             page.goto("https://limited.facebook.com/", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=10000)
 
-            page.locator('a#signup-button').wait_for(state="visible", timeout=10000)
             page.locator('a#signup-button').click()
             page.wait_for_selector('input[name="firstname"]', timeout=15000)
             page.locator('input[name="firstname"]').fill("John")
             page.locator('input[name="lastname"]').fill("Doe")
-            next_btn = page.locator('button[data-sigil="touchable multi_step_next"]')
-            next_btn.click()
-            page.wait_for_selector('select[name="birthday_day"]', timeout=15000)
-            next_btn.click()
-            time.sleep(1)
-            next_btn.click()
-            page.wait_for_selector('input[name="age_step_input"]', timeout=15000)
+            
+            for _ in range(3):
+                page.locator('button[data-sigil="touchable multi_step_next"]').click()
+                time.sleep(1)
+            
             page.locator('input[name="age_step_input"]').fill("25")
-            next_btn.click()
-            page.wait_for_selector('a[data-sigil="default_birthday_popup_yes"]', timeout=15000)
+            page.locator('button[data-sigil="touchable multi_step_next"]').click()
             page.locator('a[data-sigil="default_birthday_popup_yes"]').click()
-            page.wait_for_selector('input[name="reg_email__"]', timeout=15000)
             page.locator('input[name="reg_email__"]').fill(self.phone)
-            next_btn.click()
-            page.wait_for_selector('input[name="sex"][value="1"]', timeout=15000)
+            page.locator('button[data-sigil="touchable multi_step_next"]').click()
             page.locator('input[name="sex"][value="1"]').click()
-            next_btn.click()
-            page.wait_for_selector('input[name="reg_passwd__"]', timeout=15000)
+            page.locator('button[data-sigil="touchable multi_step_next"]').click()
             page.locator('input[name="reg_passwd__"]').fill("Password123!")
             page.locator('button[name="submit"]').click()
-            page.wait_for_selector('button[type="submit"][value="OK"]', timeout=20000)
             page.locator('button[type="submit"][value="OK"]').click()
-            page.wait_for_selector('div[role="radio"][aria-label*="SMS" i]', timeout=15000)
+            
             sms_option = page.locator('div[role="radio"][aria-label*="SMS" i]')
-            if sms_option.get_attribute("aria-checked") == "false": sms_option.click()
+            if sms_option.get_attribute("aria-checked") == "false":
+                sms_option.click()
             page.locator('div[role="button"][aria-label="Continue"]').click()
-            page.wait_for_selector('input[inputmode="numeric"]', timeout=15000)
-
+            
             for _ in range(self.resend_attempts):
                 try:
-                    didnt_receive = page.locator('div[role="button"][aria-label="I didn\'t receive the code"]')
-                    if didnt_receive.count() == 0: break
-                    didnt_receive.click()
+                    page.locator('div[role="button"][aria-label="I didn\'t receive the code"]').click()
                     time.sleep(1)
-                    page.wait_for_load_state("networkidle", timeout=5000)
-                    resend_btn = page.locator('div[role="button"][aria-label="Resend code to SMS"]')
-                    resend_btn.wait_for(state="visible", timeout=5000)
-                    resend_btn.click()
+                    page.locator('div[role="button"][aria-label="Resend code to SMS"]').click()
                     self.resend_count += 1
                     time.sleep(2)
                 except: break
-
-            time.sleep(5)
+            
             self.success = True
         except:
             self.success = False
@@ -290,6 +216,7 @@ class NewFacebookAutomation:
             if browser: browser.close()
             if playwright: playwright.stop()
         return self.success
+
 
 class ResetFBAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
@@ -303,7 +230,6 @@ class ResetFBAutomation:
         self.resend_count = 0
 
     def run(self):
-        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -313,56 +239,33 @@ class ResetFBAutomation:
             page = context.new_page()
             page.goto("https://limited.facebook.com/login/identify/?ctx=recover", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=10000)
+            
             page.locator('#identify_search_text_input').fill(self.phone)
-            time.sleep(0.5)
             page.locator('#did_submit').click()
-            page.wait_for_load_state("networkidle", timeout=15000)
+            time.sleep(3)
+            
+            page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")').click()
             time.sleep(2)
-
-            try:
-                page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")').wait_for(state="visible", timeout=10000)
-                page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")').click()
-                page.wait_for_load_state("networkidle", timeout=10000)
-                time.sleep(1)
-            except PlaywrightTimeout:
-                return False
-
-            page.wait_for_selector('input[name="recover_method"]', timeout=15000)
+            
             last_two = self.phone[-2:]
             sections = page.locator('section._7br1')
             for i in range(sections.count()):
                 section = sections.nth(i)
                 radio = section.locator('input[type="radio"][name="recover_method"]')
-                if radio.count() > 0 and radio.get_attribute("value", "").startswith("send_sms:"):
-                    label_div = section.locator('label div._52jc._52j9')
-                    if label_div.count() > 0 and label_div.first.text_content().strip().endswith(last_two):
+                if radio.get_attribute("value", "").startswith("send_sms:"):
+                    if section.locator('label div._52jc._52j9').text_content().strip().endswith(last_two):
                         radio.click()
                         break
+            
             page.locator('button[type="submit"][name="reset_action"]:has-text("Continue")').click()
-            page.wait_for_load_state("networkidle", timeout=15000)
-
+            
             for _ in range(self.resend_attempts):
                 try:
-                    try_another = page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")')
-                    if try_another.count() == 0: break
-                    try_another.click()
-                    page.wait_for_load_state("networkidle", timeout=10000)
+                    page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")').click()
                     time.sleep(1)
-                    page.wait_for_selector('input[name="recover_method"]', timeout=15000)
-                    for i in range(sections.count()):
-                        section = sections.nth(i)
-                        radio = section.locator('input[type="radio"][name="recover_method"]')
-                        if radio.count() > 0 and radio.get_attribute("value", "").startswith("send_sms:"):
-                            label_div = section.locator('label div._52jc._52j9')
-                            if label_div.count() > 0 and label_div.first.text_content().strip().endswith(last_two):
-                                radio.click()
-                                break
-                    page.locator('button[type="submit"][name="reset_action"]:has-text("Continue")').click()
-                    page.wait_for_load_state("networkidle", timeout=15000)
                     self.resend_count += 1
                 except: break
-
-            time.sleep(5)
+            
             self.success = True
         except:
             self.success = False
@@ -371,10 +274,12 @@ class ResetFBAutomation:
             if playwright: playwright.stop()
         return self.success
 
+
 # ---------- Main ----------
 def main():
     print("=" * 60)
-    print("  TERMUX MOBILE AUTOMATION")
+    print("  TERMUX AUTOMATION BOT (Playwright)")
+    print("  Instagram | Facebook | New FB | Reset FB")
     print("=" * 60)
 
     while True:
@@ -397,41 +302,21 @@ def main():
         "3": ("New FB", NewFacebookAutomation),
         "4": ("Reset FB", ResetFBAutomation)
     }
-    print("\nSelect platforms:")
+    print("\nSelect platforms (comma separated):")
     for k, (name, _) in platform_map.items():
         print(f"  {k}) {name}")
-    while True:
-        choice = input("Your choice(s): ").strip()
-        selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
-        if not selected:
-            print("❌ Invalid.")
-            continue
-        platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
-        break
+    
+    choice = input("Your choice(s): ").strip()
+    selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
+    platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
 
     proxy_input = input("\n🔌 Proxy (IP:Port:User:Pass) or Enter to skip: ").strip()
     proxy_config = parse_proxy(proxy_input) if proxy_input else None
 
-    while True:
-        try:
-            workers = int(input("\n👥 Workers (1-10): ").strip())
-            if 1 <= workers <= 10: break
-        except: pass
+    workers = int(input("\n👥 Workers (1-5): ").strip())
+    resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
 
-    while True:
-        try:
-            resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
-            if 0 <= resend <= 10: break
-        except: pass
-
-    print("\n" + "-" * 40)
-    print(f"  Numbers: {len(numbers)}")
-    print(f"  Platforms: {', '.join(p[0] for p in platforms)}")
-    print(f"  Workers: {workers}")
-    print(f"  Resend attempts: {resend}")
-    print("-" * 40)
     if input("\nStart automation? (y/n): ").strip().lower() != 'y':
-        print("Aborted.")
         return
 
     queue = Queue()
@@ -462,7 +347,6 @@ def main():
             except Empty:
                 break
             for name, cls in platforms:
-                if stop_event.is_set(): break
                 if name in ("Instagram", "New FB", "Reset FB"):
                     automator = cls(phone, headless=True, proxy=proxy_config,
                                    user_agent=random.choice(USER_AGENTS),
@@ -470,8 +354,10 @@ def main():
                 else:
                     automator = cls(phone, headless=True, proxy=proxy_config,
                                    user_agent=random.choice(USER_AGENTS))
+                
                 success = automator.run()
                 resend_cnt = getattr(automator, 'resend_count', 0)
+                
                 with lock:
                     if success:
                         extra = f" [{resend_cnt}]" if resend_cnt > 0 else ""
@@ -483,7 +369,7 @@ def main():
                     processed += 1
                     results.append((phone, name, success))
             queue.task_done()
-            time.sleep(1)
+            time.sleep(2)
 
     threads = []
     for _ in range(min(workers, total_tasks)):
@@ -499,20 +385,7 @@ def main():
         stop_event.set()
         sys.exit(0)
 
-    stop_event.set()
-    time.sleep(1)
-
-    print("\n" + "=" * 60)
-    print(f"  COMPLETED | Total: {len(results)} | Success: {success_count}")
-    print("=" * 60)
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_file = f"report_{timestamp}.txt"
-    with open(report_file, "w") as f:
-        f.write(f"Total: {len(results)}  Success: {success_count}\n")
-        for phone, name, ok in results:
-            f.write(f"{phone} [{name}] -> {'Success' if ok else 'Failed'}\n")
-    print(f"📁 Report saved: {report_file}")
+    print(f"\n✅ Done! Success: {success_count}/{len(results)}")
 
 if __name__ == "__main__":
     main()
