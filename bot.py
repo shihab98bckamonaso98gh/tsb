@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Termux Mobile Automation Bot (Proot‑distro auto‑installer)
+Termux Mobile Automation Bot (Proot auto-fix)
 Instagram | Facebook | New FB | Reset FB
 """
 
@@ -490,12 +490,11 @@ class ResetFBAutomation:
         return self.success
 
 
-# ---------- Environment Check & Auto‑installer for Proot ----------
+# ---------- Environment helper functions ----------
 def is_termux():
     return os.path.isdir("/data/data/com.termux")
 
 def is_proot():
-    # If we have apt and /etc/debian_version, we're inside a proot distro
     return os.path.isfile("/etc/debian_version") and os.path.exists("/usr/bin/apt")
 
 def run_cmd(cmd, show_output=True):
@@ -514,40 +513,46 @@ def run_cmd(cmd, show_output=True):
 
 def ensure_proot_environment():
     """If on Termux and not inside proot, install proot-distro + Ubuntu and exit.
-       If inside proot, install playwright and chromium."""
+       If inside proot, continue."""
     if is_proot():
         print("✅ Running inside proot-distro (Ubuntu).")
-        return True  # we are in the right environment, continue with pip install
-
-    if not is_termux():
-        # Not Termux, maybe another Linux, try normal pip
         return True
 
-    print("\n⚠️  You are running in Termux (Bionic libc).")
-    print("Playwright requires glibc and cannot be installed directly here.")
-    print("I'll now install proot-distro + Ubuntu automatically.")
-    print("After that, run the bot inside Ubuntu with: python bot.py\n")
+    if not is_termux():
+        return True
 
-    # Install proot-distro and Ubuntu
+    print("\n⚠️  Termux detected. Installing proot-distro + Ubuntu automatically...")
     if not run_cmd("pkg install proot-distro -y"):
-        print("❌ Failed to install proot-distro. Check your network.")
+        print("❌ Failed to install proot-distro.")
         sys.exit(1)
-
     if not run_cmd("proot-distro install ubuntu"):
-        print("❌ Failed to install Ubuntu. Try manually: proot-distro install ubuntu")
+        print("❌ Failed to install Ubuntu.")
         sys.exit(1)
 
-    print("\n✅ Ubuntu installed successfully!")
-    print("Now log into Ubuntu with: proot-distro login ubuntu")
-    print("Inside Ubuntu, navigate to your script and run: python bot.py")
-    print("It will then automatically install Playwright and start the automation.\n")
+    print("\n✅ Ubuntu installed! Now log into it and re-run the script:")
+    print("   proot-distro login ubuntu")
+    print("   cd /path/to/script")
+    print("   python bot.py")
     sys.exit(0)
 
+def fix_dns_inside_proot():
+    """Force Google DNS if inside proot (Ubuntu)."""
+    if not is_proot():
+        return
+    print("🔧 Fixing DNS inside proot Ubuntu...")
+    run_cmd("echo 'nameserver 8.8.8.8' > /etc/resolv.conf", show_output=False)
+    run_cmd("echo 'nameserver 8.8.4.4' >> /etc/resolv.conf", show_output=False)
+    run_cmd("apt update -qq && apt install -y ca-certificates", show_output=False)
+
 def check_and_install_dependencies():
-    """Only run when we are inside proot (or a normal Linux)."""
     print("\n🔍 Checking dependencies...")
 
-    # Check if playwright module is importable
+    # Fix DNS first (proot)
+    fix_dns_inside_proot()
+
+    # Upgrade pip
+    run_cmd("python3 -m pip install --upgrade pip", show_output=True)
+
     try:
         import playwright
         print("  ✅ Playwright Python module found.")
@@ -559,16 +564,16 @@ def check_and_install_dependencies():
             "pip install -i https://mirrors.aliyun.com/pypi/simple playwright",
             "pip install -i https://pypi.mirrors.ustc.edu.cn/simple playwright"
         ]
-        installed = False
+        ok = False
         for cmd in mirrors:
             if run_cmd(cmd):
-                installed = True
+                ok = True
                 break
-        if not installed:
-            print("❌ Failed to install playwright. Check your internet or try manually.")
+        if not ok:
+            print("❌ All installation attempts failed. Check your internet.")
             sys.exit(1)
 
-    # Check Chromium
+    # Chromium
     def is_chromium_working():
         try:
             subprocess.run([
@@ -584,7 +589,7 @@ def check_and_install_dependencies():
             return False
 
     if not is_chromium_working():
-        print("  ⚠️ Chromium browser not ready. Installing...")
+        print("  ⚠️ Chromium not ready. Installing...")
         run_cmd("playwright install chromium")
         run_cmd("playwright install-deps chromium")
         if is_chromium_working():
@@ -598,10 +603,7 @@ def check_and_install_dependencies():
 
 # ---------- Main ----------
 def main():
-    # First, ensure we are in a proot environment (if needed)
     ensure_proot_environment()
-
-    # Now we are in proot (or a normal Linux), install deps
     check_and_install_dependencies()
 
     print("=" * 60)
@@ -637,7 +639,7 @@ def main():
         choice = input("Your choice(s): ").strip()
         selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
         if not selected:
-            print("❌ Invalid. Use numbers 1-4.")
+            print("❌ Invalid. Use 1-4.")
             continue
         platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
         print(f"✅ Using: {', '.join(p[0] for p in platforms)}")
@@ -656,7 +658,7 @@ def main():
         except ValueError:
             print("❌ Invalid number.")
 
-    # Resend attempts
+    # Resend
     while True:
         try:
             resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
@@ -665,7 +667,6 @@ def main():
         except ValueError:
             print("❌ Invalid number.")
 
-    # Summary
     print("\n" + "-" * 40)
     print(f"  Numbers: {len(numbers)}")
     print(f"  Platforms: {', '.join(p[0] for p in platforms)}")
@@ -677,7 +678,6 @@ def main():
         print("Aborted.")
         return
 
-    # Queue and threads
     queue = Queue()
     for num in numbers:
         queue.put(num)
