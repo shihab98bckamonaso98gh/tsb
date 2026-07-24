@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Termux Automation Bot – Final Loop Version
+Termux Automation Bot – Final (up to 30 workers)
 Instagram | Facebook | New FB | Reset FB
 """
 
@@ -44,7 +44,7 @@ def parse_proxy(proxy_str):
     return config
 
 
-# ---------- Automation Classes (silent, fully working) ----------
+# ---------- Automation Classes (silent) ----------
 class InstagramAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
         self.phone = phone
@@ -309,196 +309,192 @@ class ResetFBAutomation:
         return self.success
 
 
-# ---------- Main Program (with restart loop) ----------
+# ---------- Main Program ----------
 def main():
-    while True:   # <-- restart loop
-        print("\n" + "=" * 60)
-        print("  TERMUX AUTOMATION BOT (v3.0)")
-        print("=" * 60)
+    print("=" * 60)
+    print("  TERMUX AUTOMATION BOT (v2.0)")
+    print("=" * 60)
 
-        # 1. Numbers file
-        while True:
-            file_path = input("\n📁 Enter path to numbers.txt: ").strip()
-            if not os.path.isfile(file_path):
-                print("❌ File not found.")
-                continue
-            with open(file_path, "r", encoding="utf-8") as f:
-                numbers = [line.strip() for line in f if line.strip()]
-            if not numbers:
-                print("❌ Empty file.")
-                continue
-            numbers = list(dict.fromkeys(numbers))
-            print(f"✅ Loaded {len(numbers)} numbers.")
-            break
+    # 1. Numbers file
+    while True:
+        file_path = input("\n📁 Enter path to numbers.txt: ").strip()
+        if not os.path.isfile(file_path):
+            print("❌ File not found.")
+            continue
+        with open(file_path, "r", encoding="utf-8") as f:
+            numbers = [line.strip() for line in f if line.strip()]
+        if not numbers:
+            print("❌ Empty file.")
+            return
+        numbers = list(dict.fromkeys(numbers))
+        print(f"✅ Loaded {len(numbers)} numbers.")
+        break
 
-        # 2. Platforms
-        platform_map = {
-            "1": ("Instagram", InstagramAutomation),
-            "2": ("Facebook", FacebookAutomation),
-            "3": ("New FB", NewFacebookAutomation),
-            "4": ("Reset FB", ResetFBAutomation)
-        }
-        print("\nSelect platforms (comma separated):")
-        for k, (name, _) in platform_map.items():
-            print(f"  {k}) {name}")
-        while True:
-            choice = input("Your choice(s): ").strip()
-            selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
-            if not selected:
-                print("❌ Invalid. Use numbers 1-4.")
-                continue
-            platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
-            print(f"✅ Using: {', '.join(p[0] for p in platforms)}")
-            break
+    # 2. Platforms
+    platform_map = {
+        "1": ("Instagram", InstagramAutomation),
+        "2": ("Facebook", FacebookAutomation),
+        "3": ("New FB", NewFacebookAutomation),
+        "4": ("Reset FB", ResetFBAutomation)
+    }
+    print("\nSelect platforms (comma separated):")
+    for k, (name, _) in platform_map.items():
+        print(f"  {k}) {name}")
+    while True:
+        choice = input("Your choice(s): ").strip()
+        selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
+        if not selected:
+            print("❌ Invalid. Use numbers 1-4.")
+            continue
+        platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
+        print(f"✅ Using: {', '.join(p[0] for p in platforms)}")
+        break
 
-        # 3. Proxy
-        proxy_input = input("\n🔌 Proxy (IP:Port:User:Pass) or Enter to skip: ").strip()
-        proxy_config = parse_proxy(proxy_input) if proxy_input else None
+    # 3. Proxy
+    proxy_input = input("\n🔌 Proxy (IP:Port:User:Pass) or Enter to skip: ").strip()
+    proxy_config = parse_proxy(proxy_input) if proxy_input else None
 
-        # 4. Workers
-        while True:
-            try:
-                workers = int(input("\n👥 Workers (1-30): ").strip())
-                if 1 <= workers <= 30:
-                    break
-                print("❌ Between 1 and 30.")
-            except ValueError:
-                print("❌ Invalid number.")
-
-        # 5. Resend attempts
-        while True:
-            try:
-                resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
-                if 0 <= resend <= 10:
-                    break
-                print("❌ Between 0 and 10.")
-            except ValueError:
-                print("❌ Invalid number.")
-
-        # Summary
-        print("\n" + "-" * 40)
-        print(f"  Numbers: {len(numbers)}")
-        print(f"  Platforms: {', '.join(p[0] for p in platforms)}")
-        print(f"  Proxy: {'Yes' if proxy_config else 'No'}")
-        print(f"  Workers: {workers}")
-        print(f"  Resend attempts: {resend}")
-        print("-" * 40)
-        if input("\nStart automation? (y/n): ").strip().lower() != 'y':
-            print("Skipping this batch. Press Enter to restart...")
-            input()
-            continue   # go back to numbers-file prompt
-
-        # ---------- Automation ----------
-        queue = Queue()
-        for num in numbers:
-            queue.put(num)
-
-        total_tasks = len(numbers) * len(platforms)
-        stop_event = threading.Event()
-        lock = threading.Lock()
-        processed = 0
-        success_count = 0
-        results = []
-
-        # Progress bar thread
-        def progress_monitor():
-            while not stop_event.is_set():
-                with lock:
-                    sys.stdout.write(f"\r📊 Progress: {processed}/{total_tasks}")
-                    sys.stdout.flush()
-                time.sleep(1)
-            with lock:
-                sys.stdout.write("\r" + " " * 40 + "\r")
-                sys.stdout.flush()
-
-        threading.Thread(target=progress_monitor, daemon=True).start()
-
-        # Worker function
-        def worker():
-            nonlocal processed, success_count
-            time.sleep(random.uniform(0, 1))   # staggered start
-            while not stop_event.is_set():
-                try:
-                    phone = queue.get(timeout=2)
-                except Empty:
-                    break
-
-                for name, cls in platforms:
-                    if stop_event.is_set():
-                        break
-
-                    if name in ("Instagram", "New FB", "Reset FB"):
-                        automator = cls(phone, headless=True, proxy=proxy_config,
-                                       user_agent=random.choice(USER_AGENTS),
-                                       resend_attempts=resend)
-                    else:
-                        automator = cls(phone, headless=True, proxy=proxy_config,
-                                       user_agent=random.choice(USER_AGENTS))
-
-                    success = automator.run()
-                    resend_cnt = getattr(automator, 'resend_count', 0)
-
-                    with lock:
-                        if success:
-                            extra = f" [{resend_cnt}]" if resend_cnt > 0 else ""
-                            msg = f"[{phone}] {name} ==> ✅ Send Successfully{extra}"
-                            success_count += 1
-                        else:
-                            msg = f"[{phone}] {name} ==> ❌ Failed"
-                        print(msg)
-                        processed += 1
-                        results.append((phone, name, success))
-
-                queue.task_done()
-                time.sleep(1)   # small gap between numbers
-
-        # Launch workers
-        num_threads = min(workers, total_tasks)
-        threads = []
-        for i in range(num_threads):
-            t = threading.Thread(target=worker)
-            t.start()
-            threads.append(t)
-            time.sleep(0.05)   # stagger creation
-
-        print(f"\n🚀 Started {num_threads} workers...\n")
-
+    # 4. Workers (allow up to 30)
+    while True:
         try:
-            for t in threads:
-                t.join()
-        except KeyboardInterrupt:
-            print("\n⏹️ Interrupted, stopping...")
-            stop_event.set()
-            for t in threads:
-                t.join(timeout=3)
-            sys.exit(0)
+            workers = int(input("\n👥 Workers (1-30): ").strip())
+            if 1 <= workers <= 30:
+                break
+            print("❌ Between 1 and 30.")
+        except ValueError:
+            print("❌ Invalid number.")
 
+    # 5. Resend attempts
+    while True:
+        try:
+            resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
+            if 0 <= resend <= 10:
+                break
+            print("❌ Between 0 and 10.")
+        except ValueError:
+            print("❌ Invalid number.")
+
+    # Summary
+    print("\n" + "-" * 40)
+    print(f"  Numbers: {len(numbers)}")
+    print(f"  Platforms: {', '.join(p[0] for p in platforms)}")
+    print(f"  Proxy: {'Yes' if proxy_config else 'No'}")
+    print(f"  Workers: {workers}")
+    print(f"  Resend attempts: {resend}")
+    print("-" * 40)
+    if input("\nStart automation? (y/n): ").strip().lower() != 'y':
+        print("Aborted.")
+        return
+
+    # Queue setup
+    queue = Queue()
+    for num in numbers:
+        queue.put(num)
+
+    total_tasks = len(numbers) * len(platforms)
+    stop_event = threading.Event()
+    lock = threading.Lock()
+    processed = 0
+    success_count = 0
+    results = []
+
+    # Progress bar thread (footer)
+    def progress_monitor():
+        while not stop_event.is_set():
+            with lock:
+                sys.stdout.write(f"\r📊 Progress: {processed}/{total_tasks}")
+                sys.stdout.flush()
+            time.sleep(1)
+        with lock:
+            sys.stdout.write("\r" + " " * 40 + "\r")
+            sys.stdout.flush()
+
+    threading.Thread(target=progress_monitor, daemon=True).start()
+
+    # Worker function
+    def worker():
+        nonlocal processed, success_count
+        # tiny random delay so not all browsers launch at the exact same millisecond
+        time.sleep(random.uniform(0, 1))
+        while not stop_event.is_set():
+            try:
+                phone = queue.get(timeout=2)
+            except Empty:
+                break
+
+            for name, cls in platforms:
+                if stop_event.is_set():
+                    break
+
+                if name in ("Instagram", "New FB", "Reset FB"):
+                    automator = cls(phone, headless=True, proxy=proxy_config,
+                                   user_agent=random.choice(USER_AGENTS),
+                                   resend_attempts=resend)
+                else:
+                    automator = cls(phone, headless=True, proxy=proxy_config,
+                                   user_agent=random.choice(USER_AGENTS))
+
+                success = automator.run()
+                resend_cnt = getattr(automator, 'resend_count', 0)
+
+                with lock:
+                    if success:
+                        extra = f" [{resend_cnt}]" if resend_cnt > 0 else ""
+                        msg = f"[{phone}] {name} ==> ✅ Send Successfully{extra}"
+                        success_count += 1
+                    else:
+                        msg = f"[{phone}] {name} ==> ❌ Failed"
+                    print(msg)
+                    processed += 1
+                    results.append((phone, name, success))
+
+            queue.task_done()
+            time.sleep(1)   # small pause between numbers to avoid rate limits
+
+    # Launch threads (true parallel)
+    num_threads = min(workers, total_tasks)
+    threads = []
+    for i in range(num_threads):
+        t = threading.Thread(target=worker)
+        t.start()
+        threads.append(t)
+        time.sleep(0.05)   # stagger thread creation slightly
+
+    print(f"\n🚀 Started {num_threads} workers...\n")
+
+    try:
+        for t in threads:
+            t.join()
+    except KeyboardInterrupt:
+        print("\n⏹️ Interrupted, stopping...")
         stop_event.set()
-        time.sleep(1)   # let progress thread clear
+        for t in threads:
+            t.join(timeout=3)
+        sys.exit(0)
 
-        # Final report for this batch
-        print("\n" + "=" * 60)
-        print(f"  BATCH COMPLETED")
-        print(f"  Total: {len(results)} | Success: {success_count} | Failed: {len(results) - success_count}")
-        print("=" * 60)
+    stop_event.set()
+    time.sleep(1)
 
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        report_file = f"report_{timestamp}.txt"
-        with open(report_file, "w", encoding="utf-8") as f:
-            f.write("=== Automation Report ===\n")
-            f.write(f"Date: {datetime.now()}\n")
-            f.write(f"Numbers file: {file_path}\n")
-            f.write(f"Platforms: {', '.join(p[0] for p in platforms)}\n")
-            f.write(f"Proxy: {proxy_input if proxy_config else 'None'}\n")
-            f.write(f"Workers: {workers}  Resend attempts: {resend}\n\n")
-            f.write(f"Total: {len(results)}  Success: {success_count}  Failed: {len(results)-success_count}\n\n")
-            for phone, name, ok in results:
-                status = "Success" if ok else "Failed"
-                f.write(f"{phone} [{name}] -> {status}\n")
-        print(f"📁 Report saved: {report_file}")
+    # Final report
+    print("\n" + "=" * 60)
+    print(f"  AUTOMATION COMPLETED")
+    print(f"  Total: {len(results)} | Success: {success_count} | Failed: {len(results) - success_count}")
+    print("=" * 60)
 
-        # ---------- Restart prompt ----------
-        input("\n🔁 Press Enter to run another batch, or Ctrl+C to exit...")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    report_file = f"report_{timestamp}.txt"
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write("=== Automation Report ===\n")
+        f.write(f"Date: {datetime.now()}\n")
+        f.write(f"Numbers file: {file_path}\n")
+        f.write(f"Platforms: {', '.join(p[0] for p in platforms)}\n")
+        f.write(f"Proxy: {proxy_input if proxy_config else 'None'}\n")
+        f.write(f"Workers: {workers}  Resend attempts: {resend}\n\n")
+        f.write(f"Total: {len(results)}  Success: {success_count}  Failed: {len(results)-success_count}\n\n")
+        for phone, name, ok in results:
+            status = "Success" if ok else "Failed"
+            f.write(f"{phone} [{name}] -> {status}\n")
+    print(f"📁 Report saved: {report_file}")
 
 if __name__ == "__main__":
     main()
