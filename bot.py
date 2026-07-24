@@ -51,8 +51,7 @@ def parse_proxy(proxy_str):
         config["password"] = parts[3]
     return config
 
-# ---------- Automation Classes ----------
-# Playwright is imported locally inside run() to avoid top-level import error.
+# ---------- Automation Classes (Playwright imported locally) ----------
 
 class InstagramAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
@@ -512,12 +511,10 @@ class ResetFBAutomation:
         return self.success
 
 
-# ---------- Dependency Checker (runs before any other logic) ----------
+# ---------- Dependency Checker (upgrades pip, installs playwright) ----------
 def check_and_install_dependencies():
-    """Check if Playwright and Chromium are installed, install if missing."""
     print("\n🔍 Checking dependencies...")
 
-    # Helper to run commands
     def run_cmd(cmd):
         print(f"  ➤ {cmd}")
         try:
@@ -529,51 +526,42 @@ def check_and_install_dependencies():
             print(f"  ✖ Error: {e}")
             return False
 
-    # Check if playwright module is importable
-    try:
-        subprocess.run([sys.executable, "-c", "import playwright"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print("  ✅ Playwright Python module found.")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("  ⚠️ Playwright not installed. Installing now...")
-        # Try mirrors
-        mirrors = [
-            "https://pypi.org/simple",
-            "https://pypi.tuna.tsinghua.edu.cn/simple",
-            "https://mirrors.aliyun.com/pypi/simple",
-            "https://pypi.mirrors.ustc.edu.cn/simple"
-        ]
-        installed = False
-        for mirror in mirrors:
-            if run_cmd(f"{sys.executable} -m pip install -i {mirror} playwright"):
-                installed = True
-                break
-        if not installed:
-            # Last resort: default pip
-            if run_cmd(f"{sys.executable} -m pip install playwright"):
-                installed = True
-        if not installed:
-            print("❌ Failed to install playwright. Check your internet connection or use a proxy.")
-            sys.exit(1)
+    # Step 1: upgrade pip (critical for Termux to find packages)
+    run_cmd(f"{sys.executable} -m pip install --upgrade pip --no-cache-dir")
 
-    # Check Chromium availability
+    # Step 2: try to install playwright
+    def try_install():
+        mirrors = [
+            "",  # default index
+            "-i https://pypi.tuna.tsinghua.edu.cn/simple",
+            "-i https://mirrors.aliyun.com/pypi/simple",
+            "-i https://pypi.mirrors.ustc.edu.cn/simple"
+        ]
+        for mirror in mirrors:
+            cmd = f"{sys.executable} -m pip install playwright --no-cache-dir {mirror}".strip()
+            if run_cmd(cmd):
+                return True
+        return False
+
+    if try_install():
+        print("  ✅ Playwright installed.")
+    else:
+        print("❌ All installation attempts failed.")
+        print("   Try manually: pip install playwright")
+        print("   Or use a VPN/proxy if network is restricted.")
+        sys.exit(1)
+
+    # Step 3: verify playwright import
     try:
-        # Quick launch test (headless)
-        subprocess.run([
-            sys.executable, "-c",
-            "from playwright.sync_api import sync_playwright; "
-            "p = sync_playwright().start(); "
-            "b = p.chromium.launch(headless=True); "
-            "b.close(); "
-            "p.stop()"
-        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-        print("  ✅ Chromium browser works.")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        print("  ⚠️ Chromium not ready. Installing...")
-        if not run_cmd("playwright install chromium"):
-            # Try with deps
-            run_cmd("playwright install-deps chromium")
-            run_cmd("playwright install chromium")
-        # Verify again
+        subprocess.run([sys.executable, "-c", "import playwright"], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("  ✅ Playwright Python module importable.")
+    except:
+        print("  ❌ Still cannot import playwright. Aborting.")
+        sys.exit(1)
+
+    # Step 4: check/install Chromium
+    def is_chromium_working():
         try:
             subprocess.run([
                 sys.executable, "-c",
@@ -583,17 +571,27 @@ def check_and_install_dependencies():
                 "b.close(); "
                 "p.stop()"
             ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-            print("  ✅ Chromium now works.")
+            return True
         except:
-            print("  ❌ Chromium installation failed. Please run manually:")
+            return False
+
+    if not is_chromium_working():
+        print("  ⚠️ Chromium browser not ready. Installing...")
+        run_cmd("playwright install chromium")
+        run_cmd("playwright install-deps chromium")  # may fail but try
+        if is_chromium_working():
+            print("  ✅ Chromium now works.")
+        else:
+            print("  ❌ Chromium installation failed. Run manually:")
             print("     playwright install chromium")
             print("     playwright install-deps chromium")
             sys.exit(1)
+    else:
+        print("  ✅ Chromium browser ready.")
 
 
 # ---------- Main Terminal Tool ----------
 def main():
-    # Run dependency checker first
     check_and_install_dependencies()
 
     print("=" * 60)
@@ -680,7 +678,6 @@ def main():
         print("Aborted.")
         return
 
-    # Prepare queue
     queue = Queue()
     for num in numbers:
         queue.put(num)
@@ -692,7 +689,6 @@ def main():
     success_count = 0
     results = []
 
-    # Progress monitor
     def progress_monitor():
         while not stop_event.is_set():
             with lock:
@@ -725,7 +721,7 @@ def main():
                         user_agent=random.choice(USER_AGENTS),
                         resend_attempts=resend
                     )
-                else:  # Facebook
+                else:
                     automator = AutomationClass(
                         phone=phone,
                         headless=True,
@@ -750,7 +746,6 @@ def main():
             queue.task_done()
             time.sleep(1)
 
-    # Launch workers
     threads = []
     for _ in range(min(workers, total_tasks)):
         t = threading.Thread(target=worker)
@@ -770,7 +765,6 @@ def main():
     stop_event.set()
     monitor_thread.join(timeout=1)
 
-    # Final report
     print("\n" + "=" * 60)
     print("  AUTOMATION COMPLETED")
     print(f"  Total attempts: {len(results)}")
@@ -778,7 +772,6 @@ def main():
     print(f"  Failed: {len(results) - success_count}")
     print("=" * 60)
 
-    # Save report
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     report_file = f"report_{timestamp}.txt"
     with open(report_file, "w", encoding="utf-8") as f:
