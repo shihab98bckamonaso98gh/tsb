@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Termux Mobile Automation Bot
-- Auto‑detects missing dependencies and installs them.
-- Supports Instagram, Facebook, New FB, Reset FB.
-- Silent mode: only final results and progress bar.
+Termux Mobile Automation Bot (Proot‑distro auto‑installer)
+Instagram | Facebook | New FB | Reset FB
 """
 
 import os
@@ -37,7 +35,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (Linux; Android 14; moto g power 5G - 2024 Build/U1UD34.16-62; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/123.0.6312.99 Mobile Safari/537.36"
 ]
 
-# ---------- Proxy Parsing ----------
 def parse_proxy(proxy_str):
     if not proxy_str or proxy_str.lower() == "none":
         return None
@@ -51,8 +48,7 @@ def parse_proxy(proxy_str):
         config["password"] = parts[3]
     return config
 
-# ---------- Automation Classes (Playwright imported locally) ----------
-
+# ---------- Automation Classes (unchanged) ----------
 class InstagramAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
         self.phone = phone
@@ -122,12 +118,8 @@ class InstagramAutomation:
         except Exception:
             self.success = False
         finally:
-            if browser:
-                try: browser.close()
-                except: pass
-            if playwright:
-                try: playwright.stop()
-                except: pass
+            if browser: browser.close()
+            if playwright: playwright.stop()
         return self.success
 
 
@@ -172,12 +164,8 @@ class FacebookAutomation:
         except Exception:
             self.success = False
         finally:
-            if browser:
-                try: browser.close()
-                except: pass
-            if playwright:
-                try: playwright.stop()
-                except: pass
+            if browser: browser.close()
+            if playwright: playwright.stop()
         return self.success
 
     def _handle_account_not_found(self, page):
@@ -194,7 +182,6 @@ class FacebookAutomation:
         return False
 
     def _navigate_to_sms_option(self, page):
-        from playwright.sync_api import TimeoutError as PlaywrightTimeout
         for _ in range(6):
             page.wait_for_load_state("networkidle", timeout=10000)
             time.sleep(1)
@@ -287,7 +274,7 @@ class NewFacebookAutomation:
         return ''.join(random.choice(chars) for _ in range(random.randint(10, 12)))
 
     def run(self):
-        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+        from playwright.sync_api import sync_playwright
         playwright = None
         browser = None
         try:
@@ -389,12 +376,8 @@ class NewFacebookAutomation:
         except Exception:
             self.success = False
         finally:
-            if browser:
-                try: browser.close()
-                except: pass
-            if playwright:
-                try: playwright.stop()
-                except: pass
+            if browser: browser.close()
+            if playwright: playwright.stop()
         return self.success
 
 
@@ -502,65 +485,90 @@ class ResetFBAutomation:
         except Exception:
             self.success = False
         finally:
-            if browser:
-                try: browser.close()
-                except: pass
-            if playwright:
-                try: playwright.stop()
-                except: pass
+            if browser: browser.close()
+            if playwright: playwright.stop()
         return self.success
 
 
-# ---------- Dependency Checker (upgrades pip, installs playwright) ----------
-def check_and_install_dependencies():
-    print("\n🔍 Checking dependencies...")
+# ---------- Environment Check & Auto‑installer for Proot ----------
+def is_termux():
+    return os.path.isdir("/data/data/com.termux")
 
-    def run_cmd(cmd):
+def is_proot():
+    # If we have apt and /etc/debian_version, we're inside a proot distro
+    return os.path.isfile("/etc/debian_version") and os.path.exists("/usr/bin/apt")
+
+def run_cmd(cmd, show_output=True):
+    if show_output:
         print(f"  ➤ {cmd}")
-        try:
-            result = subprocess.run(cmd, shell=True, check=False, text=True,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        result = subprocess.run(cmd, shell=True, check=False, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if show_output:
             print(result.stdout.strip())
-            return result.returncode == 0
-        except Exception as e:
+        return result.returncode == 0
+    except Exception as e:
+        if show_output:
             print(f"  ✖ Error: {e}")
-            return False
-
-    # Step 1: upgrade pip (critical for Termux to find packages)
-    run_cmd(f"{sys.executable} -m pip install --upgrade pip --no-cache-dir")
-
-    # Step 2: try to install playwright
-    def try_install():
-        mirrors = [
-            "",  # default index
-            "-i https://pypi.tuna.tsinghua.edu.cn/simple",
-            "-i https://mirrors.aliyun.com/pypi/simple",
-            "-i https://pypi.mirrors.ustc.edu.cn/simple"
-        ]
-        for mirror in mirrors:
-            cmd = f"{sys.executable} -m pip install playwright --no-cache-dir {mirror}".strip()
-            if run_cmd(cmd):
-                return True
         return False
 
-    if try_install():
-        print("  ✅ Playwright installed.")
-    else:
-        print("❌ All installation attempts failed.")
-        print("   Try manually: pip install playwright")
-        print("   Or use a VPN/proxy if network is restricted.")
+def ensure_proot_environment():
+    """If on Termux and not inside proot, install proot-distro + Ubuntu and exit.
+       If inside proot, install playwright and chromium."""
+    if is_proot():
+        print("✅ Running inside proot-distro (Ubuntu).")
+        return True  # we are in the right environment, continue with pip install
+
+    if not is_termux():
+        # Not Termux, maybe another Linux, try normal pip
+        return True
+
+    print("\n⚠️  You are running in Termux (Bionic libc).")
+    print("Playwright requires glibc and cannot be installed directly here.")
+    print("I'll now install proot-distro + Ubuntu automatically.")
+    print("After that, run the bot inside Ubuntu with: python bot.py\n")
+
+    # Install proot-distro and Ubuntu
+    if not run_cmd("pkg install proot-distro -y"):
+        print("❌ Failed to install proot-distro. Check your network.")
         sys.exit(1)
 
-    # Step 3: verify playwright import
+    if not run_cmd("proot-distro install ubuntu"):
+        print("❌ Failed to install Ubuntu. Try manually: proot-distro install ubuntu")
+        sys.exit(1)
+
+    print("\n✅ Ubuntu installed successfully!")
+    print("Now log into Ubuntu with: proot-distro login ubuntu")
+    print("Inside Ubuntu, navigate to your script and run: python bot.py")
+    print("It will then automatically install Playwright and start the automation.\n")
+    sys.exit(0)
+
+def check_and_install_dependencies():
+    """Only run when we are inside proot (or a normal Linux)."""
+    print("\n🔍 Checking dependencies...")
+
+    # Check if playwright module is importable
     try:
-        subprocess.run([sys.executable, "-c", "import playwright"], check=True,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print("  ✅ Playwright Python module importable.")
-    except:
-        print("  ❌ Still cannot import playwright. Aborting.")
-        sys.exit(1)
+        import playwright
+        print("  ✅ Playwright Python module found.")
+    except ImportError:
+        print("  ⚠️ Playwright not installed. Installing...")
+        mirrors = [
+            "pip install playwright",
+            "pip install -i https://pypi.tuna.tsinghua.edu.cn/simple playwright",
+            "pip install -i https://mirrors.aliyun.com/pypi/simple playwright",
+            "pip install -i https://pypi.mirrors.ustc.edu.cn/simple playwright"
+        ]
+        installed = False
+        for cmd in mirrors:
+            if run_cmd(cmd):
+                installed = True
+                break
+        if not installed:
+            print("❌ Failed to install playwright. Check your internet or try manually.")
+            sys.exit(1)
 
-    # Step 4: check/install Chromium
+    # Check Chromium
     def is_chromium_working():
         try:
             subprocess.run([
@@ -578,27 +586,29 @@ def check_and_install_dependencies():
     if not is_chromium_working():
         print("  ⚠️ Chromium browser not ready. Installing...")
         run_cmd("playwright install chromium")
-        run_cmd("playwright install-deps chromium")  # may fail but try
+        run_cmd("playwright install-deps chromium")
         if is_chromium_working():
             print("  ✅ Chromium now works.")
         else:
-            print("  ❌ Chromium installation failed. Run manually:")
-            print("     playwright install chromium")
-            print("     playwright install-deps chromium")
+            print("  ❌ Chromium installation failed.")
             sys.exit(1)
     else:
         print("  ✅ Chromium browser ready.")
 
 
-# ---------- Main Terminal Tool ----------
+# ---------- Main ----------
 def main():
+    # First, ensure we are in a proot environment (if needed)
+    ensure_proot_environment()
+
+    # Now we are in proot (or a normal Linux), install deps
     check_and_install_dependencies()
 
     print("=" * 60)
     print("  TERMUX MOBILE AUTOMATION (Silent Mode)")
     print("=" * 60)
 
-    # 1. Numbers file
+    # Numbers file
     while True:
         file_path = input("\n📁 Enter path to numbers.txt: ").strip()
         if not os.path.isfile(file_path):
@@ -613,55 +623,44 @@ def main():
         print(f"✅ Loaded {len(numbers)} numbers.")
         break
 
-    # 2. Platforms
+    # Platforms
     platform_map = {
         "1": ("Instagram", InstagramAutomation),
         "2": ("Facebook", FacebookAutomation),
         "3": ("New FB", NewFacebookAutomation),
         "4": ("Reset FB", ResetFBAutomation)
     }
-    print("\nSelect platforms (comma separated, e.g. 1,2,4):")
-    print("  1) Instagram")
-    print("  2) Facebook")
-    print("  3) New FB")
-    print("  4) Reset FB")
+    print("\nSelect platforms (comma separated):")
+    for k, (name, _) in platform_map.items():
+        print(f"  {k}) {name}")
     while True:
         choice = input("Your choice(s): ").strip()
-        if not choice:
-            print("❌ No selection.")
-            return
         selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
         if not selected:
-            print("❌ Invalid. Use 1-4.")
+            print("❌ Invalid. Use numbers 1-4.")
             continue
         platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
         print(f"✅ Using: {', '.join(p[0] for p in platforms)}")
         break
 
-    # 3. Proxy (optional)
+    # Proxy
     proxy_input = input("\n🔌 Proxy (IP:Port:User:Pass) or Enter to skip: ").strip()
     proxy_config = parse_proxy(proxy_input) if proxy_input else None
-    if proxy_config:
-        print(f"✅ Proxy set: {proxy_input}")
-    else:
-        print("ℹ️ No proxy.")
 
-    # 4. Workers
+    # Workers
     while True:
         try:
             workers = int(input("\n👥 Workers (1-10): ").strip())
-            if 1 <= workers <= 10:
-                break
+            if 1 <= workers <= 10: break
             print("❌ Between 1 and 10.")
         except ValueError:
             print("❌ Invalid number.")
 
-    # 5. Resend attempts
+    # Resend attempts
     while True:
         try:
             resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
-            if 0 <= resend <= 10:
-                break
+            if 0 <= resend <= 10: break
             print("❌ Between 0 and 10.")
         except ValueError:
             print("❌ Invalid number.")
@@ -678,6 +677,7 @@ def main():
         print("Aborted.")
         return
 
+    # Queue and threads
     queue = Queue()
     for num in numbers:
         queue.put(num)
@@ -710,24 +710,15 @@ def main():
             except Empty:
                 break
 
-            for name, AutomationClass in platforms:
-                if stop_event.is_set():
-                    break
+            for name, cls in platforms:
+                if stop_event.is_set(): break
                 if name in ("Instagram", "New FB", "Reset FB"):
-                    automator = AutomationClass(
-                        phone=phone,
-                        headless=True,
-                        proxy=proxy_config,
-                        user_agent=random.choice(USER_AGENTS),
-                        resend_attempts=resend
-                    )
+                    automator = cls(phone, headless=True, proxy=proxy_config,
+                                   user_agent=random.choice(USER_AGENTS),
+                                   resend_attempts=resend)
                 else:
-                    automator = AutomationClass(
-                        phone=phone,
-                        headless=True,
-                        proxy=proxy_config,
-                        user_agent=random.choice(USER_AGENTS)
-                    )
+                    automator = cls(phone, headless=True, proxy=proxy_config,
+                                   user_agent=random.choice(USER_AGENTS))
 
                 success = automator.run()
                 resend_cnt = getattr(automator, 'resend_count', 0)
@@ -742,7 +733,6 @@ def main():
                     print(msg)
                     processed += 1
                     results.append((phone, name, success))
-
             queue.task_done()
             time.sleep(1)
 
@@ -767,9 +757,7 @@ def main():
 
     print("\n" + "=" * 60)
     print("  AUTOMATION COMPLETED")
-    print(f"  Total attempts: {len(results)}")
-    print(f"  Success: {success_count}")
-    print(f"  Failed: {len(results) - success_count}")
+    print(f"  Total: {len(results)} | Success: {success_count} | Failed: {len(results)-success_count}")
     print("=" * 60)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
