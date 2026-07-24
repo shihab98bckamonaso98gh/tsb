@@ -14,7 +14,6 @@ import threading
 import subprocess
 from queue import Queue, Empty
 from datetime import datetime
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 # ---------- Fixed Mobile User Agents ----------
 USER_AGENTS = [
@@ -52,7 +51,8 @@ def parse_proxy(proxy_str):
         config["password"] = parts[3]
     return config
 
-# ---------- Automation Classes (unchanged) ----------
+# ---------- Automation Classes ----------
+# Playwright is imported locally inside run() to avoid top-level import error.
 
 class InstagramAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
@@ -66,6 +66,7 @@ class InstagramAutomation:
         self.resend_count = 0
 
     def run(self):
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -141,6 +142,7 @@ class FacebookAutomation:
         self.success = False
 
     def run(self):
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -193,6 +195,7 @@ class FacebookAutomation:
         return False
 
     def _navigate_to_sms_option(self, page):
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
         for _ in range(6):
             page.wait_for_load_state("networkidle", timeout=10000)
             time.sleep(1)
@@ -285,6 +288,7 @@ class NewFacebookAutomation:
         return ''.join(random.choice(chars) for _ in range(random.randint(10, 12)))
 
     def run(self):
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -407,6 +411,7 @@ class ResetFBAutomation:
         self.resend_count = 0
 
     def run(self):
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -507,65 +512,83 @@ class ResetFBAutomation:
         return self.success
 
 
-# ---------- Dependency Checker (runs automatically) ----------
-def run_cmd(cmd):
-    """Run a shell command, print output, return True if successful."""
-    print(f"  ➤ {cmd}")
-    try:
-        result = subprocess.run(cmd, shell=True, check=False, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        print(result.stdout.strip())
-        return result.returncode == 0
-    except Exception as e:
-        print(f"  ✖ Error: {e}")
-        return False
-
+# ---------- Dependency Checker (runs before any other logic) ----------
 def check_and_install_dependencies():
-    """Ensure Playwright and Chromium are available. Install if missing."""
+    """Check if Playwright and Chromium are installed, install if missing."""
     print("\n🔍 Checking dependencies...")
 
-    # 1. Check if playwright module is importable
+    # Helper to run commands
+    def run_cmd(cmd):
+        print(f"  ➤ {cmd}")
+        try:
+            result = subprocess.run(cmd, shell=True, check=False, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            print(result.stdout.strip())
+            return result.returncode == 0
+        except Exception as e:
+            print(f"  ✖ Error: {e}")
+            return False
+
+    # Check if playwright module is importable
     try:
-        import playwright
-        print("  ✅ playwright Python module found.")
-    except ImportError:
-        print("  ⚠️ playwright not installed. Installing now...")
+        subprocess.run([sys.executable, "-c", "import playwright"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("  ✅ Playwright Python module found.")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("  ⚠️ Playwright not installed. Installing now...")
+        # Try mirrors
         mirrors = [
             "https://pypi.org/simple",
             "https://pypi.tuna.tsinghua.edu.cn/simple",
-            "https://mirrors.aliyun.com/pypi/simple"
+            "https://mirrors.aliyun.com/pypi/simple",
+            "https://pypi.mirrors.ustc.edu.cn/simple"
         ]
         installed = False
         for mirror in mirrors:
-            if run_cmd(f"pip install -i {mirror} playwright"):
+            if run_cmd(f"{sys.executable} -m pip install -i {mirror} playwright"):
                 installed = True
                 break
         if not installed:
-            print("❌ Failed to install playwright. Check internet connection.")
+            # Last resort: default pip
+            if run_cmd(f"{sys.executable} -m pip install playwright"):
+                installed = True
+        if not installed:
+            print("❌ Failed to install playwright. Check your internet connection or use a proxy.")
             sys.exit(1)
 
-    # 2. Check if Chromium browser is usable
+    # Check Chromium availability
     try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            browser.close()
+        # Quick launch test (headless)
+        subprocess.run([
+            sys.executable, "-c",
+            "from playwright.sync_api import sync_playwright; "
+            "p = sync_playwright().start(); "
+            "b = p.chromium.launch(headless=True); "
+            "b.close(); "
+            "p.stop()"
+        ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
         print("  ✅ Chromium browser works.")
-        return
-    except Exception as e:
-        print(f"  ⚠️ Chromium not ready: {e}")
-        print("  ⬇️ Attempting to install Chromium...")
-        if run_cmd("playwright install chromium"):
-            print("  ✅ Chromium installed successfully.")
-        else:
-            print("  ⚠️ Trying to install system dependencies...")
-            if run_cmd("playwright install-deps chromium"):
-                print("  ✅ Dependencies installed.")
-            else:
-                print("❌ Could not install Chromium. Please run manually:")
-                print("   playwright install chromium")
-                print("   or inside proot-distro: playwright install-deps chromium")
-                sys.exit(1)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print("  ⚠️ Chromium not ready. Installing...")
+        if not run_cmd("playwright install chromium"):
+            # Try with deps
+            run_cmd("playwright install-deps chromium")
+            run_cmd("playwright install chromium")
+        # Verify again
+        try:
+            subprocess.run([
+                sys.executable, "-c",
+                "from playwright.sync_api import sync_playwright; "
+                "p = sync_playwright().start(); "
+                "b = p.chromium.launch(headless=True); "
+                "b.close(); "
+                "p.stop()"
+            ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            print("  ✅ Chromium now works.")
+        except:
+            print("  ❌ Chromium installation failed. Please run manually:")
+            print("     playwright install chromium")
+            print("     playwright install-deps chromium")
+            sys.exit(1)
 
 
 # ---------- Main Terminal Tool ----------
@@ -669,7 +692,7 @@ def main():
     success_count = 0
     results = []
 
-    # Progress monitor (updates bottom line every second)
+    # Progress monitor
     def progress_monitor():
         while not stop_event.is_set():
             with lock:
