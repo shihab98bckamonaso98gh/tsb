@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Termux Mobile Automation Bot (No verbose logs)
-Instagram | Facebook | New FB | Reset FB
+Termux Mobile Automation Bot
+- Auto‑detects missing dependencies and installs them.
+- Supports Instagram, Facebook, New FB, Reset FB.
+- Silent mode: only final results and progress bar.
 """
 
 import os
@@ -9,6 +11,7 @@ import sys
 import time
 import random
 import threading
+import subprocess
 from queue import Queue, Empty
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -49,7 +52,7 @@ def parse_proxy(proxy_str):
         config["password"] = parts[3]
     return config
 
-# ---------- Automation Classes (no internal logging) ----------
+# ---------- Automation Classes (unchanged) ----------
 
 class InstagramAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
@@ -504,8 +507,72 @@ class ResetFBAutomation:
         return self.success
 
 
+# ---------- Dependency Checker (runs automatically) ----------
+def run_cmd(cmd):
+    """Run a shell command, print output, return True if successful."""
+    print(f"  ➤ {cmd}")
+    try:
+        result = subprocess.run(cmd, shell=True, check=False, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(result.stdout.strip())
+        return result.returncode == 0
+    except Exception as e:
+        print(f"  ✖ Error: {e}")
+        return False
+
+def check_and_install_dependencies():
+    """Ensure Playwright and Chromium are available. Install if missing."""
+    print("\n🔍 Checking dependencies...")
+
+    # 1. Check if playwright module is importable
+    try:
+        import playwright
+        print("  ✅ playwright Python module found.")
+    except ImportError:
+        print("  ⚠️ playwright not installed. Installing now...")
+        mirrors = [
+            "https://pypi.org/simple",
+            "https://pypi.tuna.tsinghua.edu.cn/simple",
+            "https://mirrors.aliyun.com/pypi/simple"
+        ]
+        installed = False
+        for mirror in mirrors:
+            if run_cmd(f"pip install -i {mirror} playwright"):
+                installed = True
+                break
+        if not installed:
+            print("❌ Failed to install playwright. Check internet connection.")
+            sys.exit(1)
+
+    # 2. Check if Chromium browser is usable
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
+        print("  ✅ Chromium browser works.")
+        return
+    except Exception as e:
+        print(f"  ⚠️ Chromium not ready: {e}")
+        print("  ⬇️ Attempting to install Chromium...")
+        if run_cmd("playwright install chromium"):
+            print("  ✅ Chromium installed successfully.")
+        else:
+            print("  ⚠️ Trying to install system dependencies...")
+            if run_cmd("playwright install-deps chromium"):
+                print("  ✅ Dependencies installed.")
+            else:
+                print("❌ Could not install Chromium. Please run manually:")
+                print("   playwright install chromium")
+                print("   or inside proot-distro: playwright install-deps chromium")
+                sys.exit(1)
+
+
 # ---------- Main Terminal Tool ----------
 def main():
+    # Run dependency checker first
+    check_and_install_dependencies()
+
     print("=" * 60)
     print("  TERMUX MOBILE AUTOMATION (Silent Mode)")
     print("=" * 60)
@@ -606,11 +673,9 @@ def main():
     def progress_monitor():
         while not stop_event.is_set():
             with lock:
-                # Overwrite current line with progress (no newline)
                 sys.stdout.write(f"\r📊 Progress: {processed}/{total_tasks}")
                 sys.stdout.flush()
             time.sleep(1)
-        # Final clear
         with lock:
             sys.stdout.write("\r" + " " * 40 + "\r")
             sys.stdout.flush()
@@ -629,7 +694,6 @@ def main():
             for name, AutomationClass in platforms:
                 if stop_event.is_set():
                     break
-                # Instantiate
                 if name in ("Instagram", "New FB", "Reset FB"):
                     automator = AutomationClass(
                         phone=phone,
@@ -656,12 +720,12 @@ def main():
                         success_count += 1
                     else:
                         msg = f"[{phone}] {name} ==> ❌ Failed"
-                    print(msg)   # newline, pushes cursor down
+                    print(msg)
                     processed += 1
                     results.append((phone, name, success))
 
             queue.task_done()
-            time.sleep(1)  # slight delay between numbers
+            time.sleep(1)
 
     # Launch workers
     threads = []
