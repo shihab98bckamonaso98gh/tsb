@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Termux Automation Bot - Works inside proot Ubuntu
+Termux Automation Bot – Final
 Instagram | Facebook | New FB | Reset FB
 """
 
@@ -11,7 +11,6 @@ import random
 import threading
 from queue import Queue, Empty
 from datetime import datetime
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 # ---------- Fixed Mobile User Agents ----------
 USER_AGENTS = [
@@ -44,7 +43,8 @@ def parse_proxy(proxy_str):
         config["password"] = parts[3]
     return config
 
-# ---------- Automation Classes ----------
+
+# ---------- Automation Classes (silent – no internal prints) ----------
 class InstagramAutomation:
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
         self.phone = phone
@@ -57,6 +57,7 @@ class InstagramAutomation:
         self.resend_count = 0
 
     def run(self):
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -90,7 +91,8 @@ class InstagramAutomation:
             for _ in range(self.resend_attempts):
                 try:
                     didnt_get_code = page.locator('div[role="button"][aria-label="I didn\'t get the code"]')
-                    if didnt_get_code.count() == 0: break
+                    if didnt_get_code.count() == 0:
+                        break
                     didnt_get_code.click()
                     time.sleep(1)
                     resend_btn = page.locator('div[role="button"][aria-label="Resend confirmation code"]')
@@ -100,12 +102,15 @@ class InstagramAutomation:
                     time.sleep(2)
                 except:
                     break
+
             self.success = True
         except:
             self.success = False
         finally:
-            if browser: browser.close()
-            if playwright: playwright.stop()
+            if browser:
+                browser.close()
+            if playwright:
+                playwright.stop()
         return self.success
 
 
@@ -119,6 +124,7 @@ class FacebookAutomation:
         self.success = False
 
     def run(self):
+        from playwright.sync_api import sync_playwright
         playwright = None
         browser = None
         try:
@@ -139,21 +145,34 @@ class FacebookAutomation:
             continue_btn.click()
             time.sleep(3)
 
-            if page.locator('div[role="radio"][aria-label*="sms" i]').count() > 0:
-                page.locator('div[role="radio"][aria-label*="sms" i]').first.click()
-                time.sleep(0.5)
-                page.locator('div[role="button"][aria-label="Continue"]').last.click()
+            for _ in range(6):
+                page.wait_for_load_state("networkidle", timeout=10000)
+                time.sleep(1)
+                if page.locator('div[role="radio"][aria-label*="sms" i]').count() > 0:
+                    page.locator('div[role="radio"][aria-label*="sms" i]').first.click()
+                    time.sleep(0.5)
+                    page.locator('div[role="button"][aria-label="Continue"]').last.click()
+                    break
+                try_another = page.locator('div[role="button"][aria-label="Try another way"]')
+                if try_another.count() > 0:
+                    try_another.click()
+                    time.sleep(2)
 
             self.success = True
         except:
             self.success = False
         finally:
-            if browser: browser.close()
-            if playwright: playwright.stop()
+            if browser:
+                browser.close()
+            if playwright:
+                playwright.stop()
         return self.success
 
 
 class NewFacebookAutomation:
+    FIRST_NAMES = ["James","Mary","John","Patricia","Robert","Jennifer","Michael","Linda"]
+    LAST_NAMES = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis"]
+
     def __init__(self, phone, headless=True, proxy=None, user_agent=None, resend_attempts=0, viewport=None):
         self.phone = phone
         self.headless = headless
@@ -163,8 +182,14 @@ class NewFacebookAutomation:
         self.viewport = viewport or {"width": 1280, "height": 720}
         self.success = False
         self.resend_count = 0
+        self.first_name = random.choice(self.FIRST_NAMES)
+        self.last_name = random.choice(self.LAST_NAMES)
+        import string
+        chars = string.ascii_letters + string.digits + "!@#$%^&*()"
+        self.password = ''.join(random.choice(chars) for _ in range(12))
 
     def run(self):
+        from playwright.sync_api import sync_playwright
         playwright = None
         browser = None
         try:
@@ -177,29 +202,29 @@ class NewFacebookAutomation:
 
             page.locator('a#signup-button').click()
             page.wait_for_selector('input[name="firstname"]', timeout=15000)
-            page.locator('input[name="firstname"]').fill("John")
-            page.locator('input[name="lastname"]').fill("Doe")
-            
+            page.locator('input[name="firstname"]').fill(self.first_name)
+            page.locator('input[name="lastname"]').fill(self.last_name)
+
             for _ in range(3):
                 page.locator('button[data-sigil="touchable multi_step_next"]').click()
                 time.sleep(1)
-            
-            page.locator('input[name="age_step_input"]').fill("25")
+
+            page.locator('input[name="age_step_input"]').fill(str(random.randint(22,30)))
             page.locator('button[data-sigil="touchable multi_step_next"]').click()
             page.locator('a[data-sigil="default_birthday_popup_yes"]').click()
             page.locator('input[name="reg_email__"]').fill(self.phone)
             page.locator('button[data-sigil="touchable multi_step_next"]').click()
             page.locator('input[name="sex"][value="1"]').click()
             page.locator('button[data-sigil="touchable multi_step_next"]').click()
-            page.locator('input[name="reg_passwd__"]').fill("Password123!")
+            page.locator('input[name="reg_passwd__"]').fill(self.password)
             page.locator('button[name="submit"]').click()
             page.locator('button[type="submit"][value="OK"]').click()
-            
+
             sms_option = page.locator('div[role="radio"][aria-label*="SMS" i]')
             if sms_option.get_attribute("aria-checked") == "false":
                 sms_option.click()
             page.locator('div[role="button"][aria-label="Continue"]').click()
-            
+
             for _ in range(self.resend_attempts):
                 try:
                     page.locator('div[role="button"][aria-label="I didn\'t receive the code"]').click()
@@ -207,14 +232,18 @@ class NewFacebookAutomation:
                     page.locator('div[role="button"][aria-label="Resend code to SMS"]').click()
                     self.resend_count += 1
                     time.sleep(2)
-                except: break
-            
+                except:
+                    break
+
+            time.sleep(3)
             self.success = True
         except:
             self.success = False
         finally:
-            if browser: browser.close()
-            if playwright: playwright.stop()
+            if browser:
+                browser.close()
+            if playwright:
+                playwright.stop()
         return self.success
 
 
@@ -230,6 +259,7 @@ class ResetFBAutomation:
         self.resend_count = 0
 
     def run(self):
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
         playwright = None
         browser = None
         try:
@@ -239,14 +269,14 @@ class ResetFBAutomation:
             page = context.new_page()
             page.goto("https://limited.facebook.com/login/identify/?ctx=recover", timeout=30000)
             page.wait_for_load_state("networkidle", timeout=10000)
-            
+
             page.locator('#identify_search_text_input').fill(self.phone)
             page.locator('#did_submit').click()
             time.sleep(3)
-            
+
             page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")').click()
             time.sleep(2)
-            
+
             last_two = self.phone[-2:]
             sections = page.locator('section._7br1')
             for i in range(sections.count()):
@@ -256,38 +286,42 @@ class ResetFBAutomation:
                     if section.locator('label div._52jc._52j9').text_content().strip().endswith(last_two):
                         radio.click()
                         break
-            
+
             page.locator('button[type="submit"][name="reset_action"]:has-text("Continue")').click()
-            
+
             for _ in range(self.resend_attempts):
                 try:
                     page.locator('a[href*="/recover/initiate/"]:has-text("Try another way")').click()
                     time.sleep(1)
                     self.resend_count += 1
-                except: break
-            
+                except:
+                    break
+
+            time.sleep(3)
             self.success = True
         except:
             self.success = False
         finally:
-            if browser: browser.close()
-            if playwright: playwright.stop()
+            if browser:
+                browser.close()
+            if playwright:
+                playwright.stop()
         return self.success
 
 
-# ---------- Main ----------
+# ---------- Main Program ----------
 def main():
     print("=" * 60)
-    print("  TERMUX AUTOMATION BOT (Playwright)")
-    print("  Instagram | Facebook | New FB | Reset FB")
+    print("  TERMUX AUTOMATION BOT")
     print("=" * 60)
 
+    # 1. Numbers file
     while True:
         file_path = input("\n📁 Enter path to numbers.txt: ").strip()
         if not os.path.isfile(file_path):
             print("❌ File not found.")
             continue
-        with open(file_path, "r") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             numbers = [line.strip() for line in f if line.strip()]
         if not numbers:
             print("❌ Empty file.")
@@ -296,6 +330,7 @@ def main():
         print(f"✅ Loaded {len(numbers)} numbers.")
         break
 
+    # 2. Platforms
     platform_map = {
         "1": ("Instagram", InstagramAutomation),
         "2": ("Facebook", FacebookAutomation),
@@ -305,20 +340,53 @@ def main():
     print("\nSelect platforms (comma separated):")
     for k, (name, _) in platform_map.items():
         print(f"  {k}) {name}")
-    
-    choice = input("Your choice(s): ").strip()
-    selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
-    platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
+    while True:
+        choice = input("Your choice(s): ").strip()
+        selected = [x.strip() for x in choice.split(",") if x.strip() in platform_map]
+        if not selected:
+            print("❌ Invalid. Use numbers 1-4.")
+            continue
+        platforms = [(platform_map[k][0], platform_map[k][1]) for k in selected]
+        print(f"✅ Using: {', '.join(p[0] for p in platforms)}")
+        break
 
+    # 3. Proxy
     proxy_input = input("\n🔌 Proxy (IP:Port:User:Pass) or Enter to skip: ").strip()
     proxy_config = parse_proxy(proxy_input) if proxy_input else None
 
-    workers = int(input("\n👥 Workers (1-5): ").strip())
-    resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
+    # 4. Workers
+    while True:
+        try:
+            workers = int(input("\n👥 Workers (1-5): ").strip())
+            if 1 <= workers <= 5:
+                break
+            print("❌ Between 1 and 5.")
+        except ValueError:
+            print("❌ Invalid number.")
 
+    # 5. Resend attempts
+    while True:
+        try:
+            resend = int(input("\n🔄 Resend attempts (0-10): ").strip())
+            if 0 <= resend <= 10:
+                break
+            print("❌ Between 0 and 10.")
+        except ValueError:
+            print("❌ Invalid number.")
+
+    # Summary
+    print("\n" + "-" * 40)
+    print(f"  Numbers: {len(numbers)}")
+    print(f"  Platforms: {', '.join(p[0] for p in platforms)}")
+    print(f"  Proxy: {'Yes' if proxy_config else 'No'}")
+    print(f"  Workers: {workers}")
+    print(f"  Resend attempts: {resend}")
+    print("-" * 40)
     if input("\nStart automation? (y/n): ").strip().lower() != 'y':
+        print("Aborted.")
         return
 
+    # Queue setup
     queue = Queue()
     for num in numbers:
         queue.put(num)
@@ -330,15 +398,20 @@ def main():
     success_count = 0
     results = []
 
+    # Progress bar thread (footer)
     def progress_monitor():
         while not stop_event.is_set():
             with lock:
                 sys.stdout.write(f"\r📊 Progress: {processed}/{total_tasks}")
                 sys.stdout.flush()
             time.sleep(1)
+        with lock:
+            sys.stdout.write("\r" + " " * 40 + "\r")
+            sys.stdout.flush()
 
     threading.Thread(target=progress_monitor, daemon=True).start()
 
+    # Worker function
     def worker():
         nonlocal processed, success_count
         while not stop_event.is_set():
@@ -346,18 +419,23 @@ def main():
                 phone = queue.get(timeout=2)
             except Empty:
                 break
+
             for name, cls in platforms:
+                if stop_event.is_set():
+                    break
+
+                # Create automation instance
                 if name in ("Instagram", "New FB", "Reset FB"):
                     automator = cls(phone, headless=True, proxy=proxy_config,
                                    user_agent=random.choice(USER_AGENTS),
                                    resend_attempts=resend)
-                else:
+                else:  # Facebook
                     automator = cls(phone, headless=True, proxy=proxy_config,
                                    user_agent=random.choice(USER_AGENTS))
-                
+
                 success = automator.run()
                 resend_cnt = getattr(automator, 'resend_count', 0)
-                
+
                 with lock:
                     if success:
                         extra = f" [{resend_cnt}]" if resend_cnt > 0 else ""
@@ -365,12 +443,14 @@ def main():
                         success_count += 1
                     else:
                         msg = f"[{phone}] {name} ==> ❌ Failed"
-                    print(msg)
+                    print(msg)          # newline; progress bar will be on the next line
                     processed += 1
                     results.append((phone, name, success))
-            queue.task_done()
-            time.sleep(2)
 
+            queue.task_done()
+            time.sleep(2)  # small delay between numbers
+
+    # Launch threads
     threads = []
     for _ in range(min(workers, total_tasks)):
         t = threading.Thread(target=worker)
@@ -381,11 +461,35 @@ def main():
         for t in threads:
             t.join()
     except KeyboardInterrupt:
-        print("\n⏹️ Interrupted...")
+        print("\n⏹️ Interrupted, stopping...")
         stop_event.set()
+        for t in threads:
+            t.join(timeout=3)
         sys.exit(0)
 
-    print(f"\n✅ Done! Success: {success_count}/{len(results)}")
+    stop_event.set()
+    time.sleep(1)  # let progress thread clear the line
+
+    # Final report
+    print("\n" + "=" * 60)
+    print(f"  AUTOMATION COMPLETED")
+    print(f"  Total: {len(results)} | Success: {success_count} | Failed: {len(results) - success_count}")
+    print("=" * 60)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    report_file = f"report_{timestamp}.txt"
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write("=== Automation Report ===\n")
+        f.write(f"Date: {datetime.now()}\n")
+        f.write(f"Numbers file: {file_path}\n")
+        f.write(f"Platforms: {', '.join(p[0] for p in platforms)}\n")
+        f.write(f"Proxy: {proxy_input if proxy_config else 'None'}\n")
+        f.write(f"Workers: {workers}  Resend attempts: {resend}\n\n")
+        f.write(f"Total: {len(results)}  Success: {success_count}  Failed: {len(results)-success_count}\n\n")
+        for phone, name, ok in results:
+            status = "Success" if ok else "Failed"
+            f.write(f"{phone} [{name}] -> {status}\n")
+    print(f"📁 Report saved: {report_file}")
 
 if __name__ == "__main__":
     main()
